@@ -1,0 +1,565 @@
+{
+    "name": "access-model-builder",
+    "keyType": "simple",
+    "description": "Automates entitlement synchronization across sources and builds complete access models with Access Profiles and Roles. Supports dynamic role assignment, governance workflows, and intelligent entitlement orchestration.",
+    "commands": ["std:entitlement:list", "std:test-connection"],
+    "supportsCustomSchemas": true,
+    "showDebugLoggingOption": true,
+    "supportsStatefulCommands": false,
+    "sourceConfigInitialValues": {
+        "baseurl": "https://tenant.api.identitynow.com"
+    },
+    "sourceConfig": [
+        {
+            "type": "menu",
+            "label": "Connection Details",
+            "items": [
+                {
+                    "type": "section",
+                    "sectionTitle": "Identity Security Cloud connection configuration",
+                    "sectionHelpMessage": "Provide your Identity Security Cloud tenant URL and Personal Access Token (PAT) credentials. The PAT must have the necessary scopes to read entitlements, manage roles, and execute workflows.",
+                    "items": [
+                        {
+                            "key": "baseurl",
+                            "label": "Identity Security Cloud API URL",
+                            "type": "url",
+                            "required": true
+                        },
+                        {
+                            "key": "clientId",
+                            "label": "Personal Access Token ID",
+                            "type": "text",
+                            "required": true
+                        },
+                        {
+                            "key": "clientSecret",
+                            "label": "Personal Access Token secret",
+                            "type": "secret",
+                            "required": true
+                        }
+                    ]
+                },
+                {
+                    "type": "section",
+                    "sectionTitle": "Execution Configuration",
+                    "sectionHelpMessage": "Control how many entitlements are processed during connector execution. Enable Dry Run mode to test with a limited number of entitlements before running a full sync. In Dry Run mode, you can set execution limits and choose between serial (global limit) or parallel (per-source limit) processing.",
+                    "items": [
+                        {
+                            "key": "dryRun",
+                            "label": "Dry Run?",
+                            "type": "checkbox",
+                            "required": false,
+                            "helpKey": "Enable to test the connector with limited entitlements. When enabled, you can configure execution limits and processing type."
+                        },
+                        {
+                            "key": "executionLimit",
+                            "label": "Execution Limit",
+                            "type": "number",
+                            "required": true,
+                            "parentKey": "dryRun",
+                            "parentValue": "true",
+                            "helpKey": "Number of entitlements to process. Set to 0 for unlimited."
+                        },
+                        {
+                            "key": "processingType",
+                            "label": "Processing Type",
+                            "type": "select",
+                            "required": true,
+                            "parentKey": "dryRun",
+                            "parentValue": "true",
+                            "options": [
+                                { "label": "Serial (Global Limit)", "value": "serial" },
+                                { "label": "Parallel (Per-Source Limit)", "value": "parallel" }
+                            ],
+                            "helpKey": "Serial: Execution limit applies globally across all sources (stops after reaching total limit). Parallel: Each source gets the full execution limit independently."
+                        }
+                    ]
+                },
+                {
+                    "type": "section",
+                    "sectionTitle": "Global Workflow Configuration",
+                    "sectionHelpMessage": "Configure the default workflow that will be triggered for entitlement synchronization to target sources. This workflow will be used unless a source-specific workflow is configured in Target Sources. You'll need the Workflow ID and dedicated OAuth credentials (Client ID and Secret) with workflow execution permissions.",
+                    "items": [
+                        {
+                            "key": "workflowName",
+                            "label": "Workflow Name",
+                            "type": "text",
+                            "required": false
+                        },
+                        {
+                            "key": "workflowId",
+                            "label": "Workflow ID",
+                            "type": "text",
+                            "required": true
+                        },
+                        {
+                            "key": "workflowClientId",
+                            "label": "Workflow Client ID",
+                            "type": "text",
+                            "required": true
+                        },
+                        {
+                            "key": "workflowClientSecret",
+                            "label": "Workflow Client Secret",
+                            "type": "secret",
+                            "required": true
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "menu",
+            "label": "Auth Sources",
+            "items": [
+                {
+                    "type": "section",
+                    "sectionTitle": "Auth Sources Configuration",
+                    "sectionHelpMessage": "Auth Sources are the authoritative sources where entitlements originate. The connector reads entitlements from these sources and can optionally create/manage Roles based on them. For each Auth Source, you can specify which entitlement types to read (e.g., groups, permissions) and configure automatic Role creation with customizable naming, ownership, approval workflows, and assignment criteria. Entitlements from Auth Sources are then synchronized to Target Sources via workflows.",
+                    "docLinkLabel": "Role Membership Criteria Format Guide",
+                    "docLink": "https://github.com/yannick-beot-sp/vscode-sailpoint-identitynow?tab=readme-ov-file#roles",
+                    "items": [
+                        {
+                            "key": "entitlementSources",
+                            "label": "Sources",
+                            "titleKey": "sourceName",
+                            "subtitleKey": "entitlementTypes",
+                            "dragNDropEnabled": true,
+                            "deleteButton": true,
+                            "editButton": true,
+                            "addButton": true,
+                            "copyButton": true,
+                            "buttonLabel": "New Source",
+                            "type": "cardList",
+                            "helpKey": "Add sources to read entitlements from",
+                            "subMenus": [
+                                {
+                                    "label": "Source Configuration",
+                                    "items": [
+                                        {
+                                            "key": "sourceName",
+                                            "label": "Source Name",
+                                            "type": "text",
+                                            "required": true,
+                                            "helpKey": "Name of the source in ISC"
+                                        },
+                                        {
+                                            "key": "entitlementTypes",
+                                            "label": "Entitlement Types",
+                                            "type": "list",
+                                            "required": true,
+                                            "helpKey": "List of entitlement types to read. NOTE: This is combined with Native Filter (AND logic)."
+                                        },
+                                        {
+                                            "key": "enableFiltering",
+                                            "label": "Add Advanced Filters?",
+                                            "type": "checkbox",
+                                            "required": false,
+                                            "helpKey": "Enable to configure Glob patterns or Native ISC filters."
+                                        },
+                                        {
+                                            "key": "includePatterns",
+                                            "label": "Include Patterns (Glob)",
+                                            "type": "list",
+                                            "required": false,
+                                            "parentKey": "enableFiltering",
+                                            "parentValue": "true",
+                                            "helpKey": "Only sync entitlements matching these Glob patterns (e.g., '*-VPN', 'VPN*', 'V?N'). If empty, all entitlements are included."
+                                        },
+                                        {
+                                            "key": "excludePatterns",
+                                            "label": "Exclude Patterns (Glob)",
+                                            "type": "list",
+                                            "required": false,
+                                            "parentKey": "enableFiltering",
+                                            "parentValue": "true",
+                                            "helpKey": "Skip entitlements matching these Glob patterns (e.g., 'Test-*', '*_OLD'). Exclusion takes precedence over inclusion."
+                                        },
+                                        {
+                                            "key": "nativeFilter",
+                                            "label": "Native ISC Filter",
+                                            "type": "text",
+                                            "required": false,
+                                            "parentKey": "enableFiltering",
+                                            "parentValue": "true",
+                                            "helpKey": "Standard ISC API filter string (e.g., 'name sw \"Admin\"'). Combined with Entitlement Types using AND logic."
+                                        },
+                                        {
+                                            "key": "accessProfileCreation",
+                                            "label": "Access Profile Creation?",
+                                            "type": "checkbox",
+                                            "helpKey": "If checked, Access Profiles will be created from entitlements (ISC Best Practice)."
+                                        },
+                                        {
+                                            "key": "accessProfileNameTemplate",
+                                            "label": "Access Profile Name Template",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "accessProfileCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Velocity template for Access Profile names (e.g., 'AP - ${_value}'). Variables: $_value, $_source, $_displayName, $_attribute, $_type"
+                                        },
+                                        {
+                                            "key": "accessProfileOwnerType",
+                                            "label": "Access Profile Owner Type",
+                                            "type": "select",
+                                            "required": false,
+                                            "parentKey": "accessProfileCreation",
+                                            "parentValue": "true",
+                                            "options": [
+                                                {"label": "Source Owner", "value": "sourceOwner"},
+                                                {"label": "Individual", "value": "individual"}
+                                            ],
+                                            "helpKey": "Select the owner type for Access Profiles."
+                                        },
+                                        {
+                                            "key": "accessProfileOwnerName",
+                                            "label": "Access Profile Owner Name",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "accessProfileOwnerType",
+                                            "parentValue": "individual",
+                                            "helpKey": "Enter the name or alias of the Access Profile owner (e.g., 'spadmin')."
+                                        },
+                                        {
+                                            "key": "accessProfileEnabled",
+                                            "label": "Access Profile Enabled?",
+                                            "type": "checkbox",
+                                            "required": false,
+                                            "parentKey": "accessProfileCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, Access Profiles will be enabled (must be enabled to be used in Roles)."
+                                        },
+                                        {
+                                            "key": "accessProfileRequestable",
+                                            "label": "Access Profile Requestable?",
+                                            "type": "checkbox",
+                                            "required": false,
+                                            "parentKey": "accessProfileCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, Access Profiles can be requested directly (typically false when used in Roles)."
+                                        },
+                                        {
+                                            "key": "roleCreation",
+                                            "label": "Role Creation?",
+                                            "type": "checkbox",
+                                            "helpKey": "If checked, Role creation will be enabled."
+                                        },
+                                        {
+                                            "key": "roleNoteSection",
+                                            "label": "NOTE",
+                                            "type": "url",
+                                            "required": false,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "NOTE: Role updates are not processed when Manual Override (Metadata Attribute) is enabled."
+                                        },
+                                        {
+                                            "key": "roleNameTemplate",
+                                            "label": "Role Name Template",
+                                            "type": "text",
+                                            "required": true,
+                                            "helpKey": "Template for Role Name. Available variables: $_source, $_value, $_displayName, $_attribute, $_type. Supports Velocity syntax.",
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true"
+                                        },
+                                        {
+                                            "key": "roleNameCase",
+                                            "label": "Role Name Case",
+                                            "type": "select",
+                                            "required": false,
+                                            "options": [
+                                                { "label": "Original", "value": "original" },
+                                                { "label": "Uppercase", "value": "upper" },
+                                                { "label": "Lowercase", "value": "lower" }
+                                            ],
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Transform the generated Role Name to uppercase or lowercase."
+                                        },
+                                        {
+                                            "key": "roleDescriptionTemplate",
+                                            "label": "Role Description Template",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Template for Role Description. Available variables: $_source, $_value, $_displayName, $_attribute, $_type. Supports Velocity syntax."
+                                        },
+                                        {
+                                            "key": "roleDescriptionCase",
+                                            "label": "Role Description Case",
+                                            "type": "select",
+                                            "required": false,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "options": [
+                                                { "label": "Original", "value": "original" },
+                                                { "label": "Uppercase", "value": "upper" },
+                                                { "label": "Lowercase", "value": "lower" }
+                                            ],
+                                            "helpKey": "Transform the generated Role Description to uppercase or lowercase."
+                                        },
+                                        {
+                                            "key": "roleEnabled",
+                                            "label": "Enable Role",
+                                            "type": "checkbox",
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, Roles will be enabled when created/updated."
+                                        },
+                                        {
+                                            "key": "roleRequestable",
+                                            "label": "Requestable",
+                                            "type": "checkbox",
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, Roles will be requestable when created/updated."
+                                        },
+                                        {
+                                            "key": "roleOwnerType",
+                                            "label": "Role Owner",
+                                            "type": "select",
+                                            "required": true,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "options": [
+                                                {
+                                                    "label": "Source Owner",
+                                                    "value": "sourceOwner"
+                                                },
+                                                {
+                                                    "label": "Individual",
+                                                    "value": "individual"
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "key": "roleOwnerName",
+                                            "label": "Owner Name (if Individual)",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "roleOwnerType",
+                                            "parentValue": "individual",
+                                            "helpKey": "Username of the identity to own the Role."
+                                        },
+                                        {
+                                            "key": "roleCreationStyle",
+                                            "label": "Creation Choice",
+                                            "type": "select",
+                                            "required": true,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "options": [
+                                                {
+                                                    "label": "All (Must exist in all targets)",
+                                                    "value": "all"
+                                                },
+                                                {
+                                                    "label": "Any (Must exist in at least one target)",
+                                                    "value": "any"
+                                                }
+                                            ],
+                                            "helpKey": "Choose 'All' to create the Role only if the entitlement exists in EVERY target source. Choose 'Any' to create it if the entitlement exists in AT LEAST ONE target source."
+                                        },
+                                        {
+                                            "key": "roleRequireApprovalForAddition",
+                                            "label": "Require Approval For Addition?",
+                                            "type": "checkbox",
+                                            "parentKey": "roleRequestable",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, access requests will require comments."
+                                        },
+                                        {
+                                            "key": "roleApprovers",
+                                            "label": "Role Approvers",
+                                            "type": "list",
+                                            "required": true,
+                                            "parentKey": "roleRequireApprovalForAddition",
+                                            "parentValue": "true",
+                                            "helpKey": "Enter the types of approvers required for access requests. Supported values: 'owner', 'manager', 'sourceOwner'.",
+                                            "description": "Define the approval chain for this Role. For example, add 'owner' then 'manager' to require both approvals."
+                                        },
+                                        {
+                                            "key": "roleGovernanceGroupName",
+                                            "label": "Addition Governance Group Approver",
+                                            "type": "text",
+                                            "required": false,
+                                            "parentKey": "roleRequireApprovalForAddition",
+                                            "parentValue": "true",
+                                            "helpKey": "Enter the exact name of a Governance Group to act as an approver. This is optional and adds to the approval chain."
+                                        },
+                                        {
+                                            "key": "roleAccessRequestCommentsRequired",
+                                            "label": "Access Request Comments?",
+                                            "type": "checkbox",
+                                            "parentKey": "roleRequestable",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, access requests will require comments."
+                                        },
+                                        {
+                                            "key": "roleAccessRequestDenialCommentsRequired",
+                                            "label": "Access Request Denial Comments?",
+                                            "type": "checkbox",
+                                            "parentKey": "roleRequestable",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, access requests will require denial comments."
+                                        },
+                                        {
+                                            "key": "roleRequireApprovalForRemoval",
+                                            "label": "Require Approval For Removal?",
+                                            "type": "checkbox",
+                                            "parentKey": "roleRequestable",
+                                            "parentValue": "true",
+                                            "helpKey": "If checked, revocation requests will require approval."
+                                        },
+                                        {
+                                            "key": "roleRevocationApprovers",
+                                            "label": "Role Revocation Approvers",
+                                            "type": "list",
+                                            "required": true,
+                                            "parentKey": "roleRequireApprovalForRemoval",
+                                            "parentValue": "true",
+                                            "helpKey": "Enter the types of revocation approvers required for revocation requests. Supported values: 'owner', 'manager', 'sourceOwner'.",
+                                            "description": "Define the approval chain for revocation requests. For example, add 'owner' then 'manager' to require both approvals."
+                                        },
+                                        {
+                                            "key": "roleRevocationGovernanceGroupName",
+                                            "label": "Revocation Governance Group Name",
+                                            "type": "text",
+                                            "required": false,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Enter the exact name of a Governance Group to act as a revocation approver. This is optional and adds to the approval chain."
+                                        },
+                                        {
+                                            "key": "roleMembershipCriteria",
+                                            "label": "Role Assignment Definition",
+                                            "type": "textarea",
+                                            "required": false,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Define custom membership criteria using SCIM-like syntax with Velocity templating. Example: identity.department eq \"$_value\" and identity.cloudLifecycleState eq \"active\". Available variables: $_source, $_value, $_displayName, $_attribute, $_type, $now, $formatdate(). Check https://github.com/yannick-beot-sp/vscode-sailpoint-identitynow?tab=readme-ov-file#roles membershipCriteria for format details. Name template Velocity rules apply."
+                                        },
+                                        {
+                                            "key": "roleSegmentNames",
+                                            "label": "Role Segments",
+                                            "type": "list",
+                                            "required": false,
+                                            "parentKey": "roleCreation",
+                                            "parentValue": "true",
+                                            "helpKey": "Enter the names of Segments to associate with this Role. This limits the Role's visibility to users in those Segments."
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "type": "menu",
+            "label": "Target Sources",
+            "items": [
+                {
+                    "type": "section",
+                    "sectionTitle": "Target Sources Configuration",
+                    "sectionHelpMessage": "Target Sources are the destination systems where entitlements from Auth Sources will be synchronized. When an entitlement is found in an Auth Source, the connector checks if it exists in the configured Target Sources and triggers a workflow to create/sync it if needed. Each Target Source can use either the Global Workflow (configured above) or its own specific workflow. This enables automated entitlement provisioning across multiple systems while maintaining a single source of truth from your Auth Sources.",
+                    "items": [
+                        {
+                            "key": "targetSources",
+                            "label": "Target Sources",
+                            "titleKey": "sourceName",
+                            "subtitleKey": "workflowName",
+                            "dragNDropEnabled": true,
+                            "deleteButton": true,
+                            "editButton": true,
+                            "addButton": true,
+                            "copyButton": true,
+                            "buttonLabel": "New Target Source",
+                            "type": "cardList",
+                            "helpKey": "Add target sources to check entitlements against",
+                            "subMenus": [
+                                {
+                                    "label": "Target Source Configuration",
+                                    "items": [
+                                        {
+                                            "key": "sourceName",
+                                            "label": "Source Name",
+                                            "type": "text",
+                                            "required": true,
+                                            "helpKey": "Name of the target source in ISC"
+                                        },
+                                        {
+                                            "key": "standard",
+                                            "label": "Standard (Use Specific Workflow)?",
+                                            "type": "checkbox",
+                                            "helpKey": "If checked, use the workflow defined below. If unchecked, use Global Workflow."
+                                        },
+                                        {
+                                            "key": "workflowName",
+                                            "label": "Workflow Name",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "standard",
+                                            "parentValue": "true"
+                                        },
+                                        {
+                                            "key": "workflowId",
+                                            "label": "Workflow ID",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "standard",
+                                            "parentValue": "true"
+                                        },
+                                        {
+                                            "key": "workflowClientId",
+                                            "label": "Workflow Client ID",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "standard",
+                                            "parentValue": "true"
+                                        },
+                                        {
+                                            "key": "workflowClientSecret",
+                                            "label": "Workflow Client Secret",
+                                            "type": "text",
+                                            "required": true,
+                                            "parentKey": "standard",
+                                            "parentValue": "true"
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "entitlementSchemas": [
+        {
+            "type": "group",
+            "identityAttribute": "id",
+            "displayAttribute": "name",
+            "attributes": [
+                {
+                    "name": "id",
+                    "type": "string",
+                    "description": "Account type ID"
+                },
+                {
+                    "name": "name",
+                    "type": "string",
+                    "description": "Account type name"
+                },
+                {
+                    "name": "description",
+                    "type": "string",
+                    "description": "Description"
+                }
+            ]
+        }
+    ]
+}
