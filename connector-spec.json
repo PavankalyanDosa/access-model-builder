@@ -5,7 +5,6 @@
     "commands": ["std:entitlement:list", "std:test-connection"],
     "supportsCustomSchemas": true,
     "showDebugLoggingOption": true,
-    "supportsStatefulCommands": false,
     "sourceConfigInitialValues": {
         "baseurl": "https://tenant.api.identitynow.com"
     },
@@ -151,6 +150,13 @@
                                             "helpKey": "List of entitlement types to read. NOTE: This is combined with Native Filter (AND logic)."
                                         },
                                         {
+                                            "key": "enableSync",
+                                            "label": "Enable Synchronization?",
+                                            "type": "checkbox",
+                                            "required": false,
+                                            "helpKey": "If unchecked, this source will be skipped during synchronization. Useful for staging configurations."
+                                        },
+                                        {
                                             "key": "enableFiltering",
                                             "label": "Add Advanced Filters?",
                                             "type": "checkbox",
@@ -207,8 +213,8 @@
                                             "parentKey": "accessProfileCreation",
                                             "parentValue": "true",
                                             "options": [
-                                                {"label": "Source Owner", "value": "sourceOwner"},
-                                                {"label": "Individual", "value": "individual"}
+                                                { "label": "Source Owner", "value": "sourceOwner" },
+                                                { "label": "Individual", "value": "individual" }
                                             ],
                                             "helpKey": "Select the owner type for Access Profiles."
                                         },
@@ -381,13 +387,13 @@
                                             "description": "Define the approval chain for this Role. For example, add 'owner' then 'manager' to require both approvals."
                                         },
                                         {
-                                            "key": "roleGovernanceGroupName",
-                                            "label": "Addition Governance Group Approver",
-                                            "type": "text",
+                                            "key": "roleGovernanceGroupNames",
+                                            "label": "Addition Governance Group Approvers",
+                                            "type": "list",
                                             "required": false,
                                             "parentKey": "roleRequireApprovalForAddition",
                                             "parentValue": "true",
-                                            "helpKey": "Enter the exact name of a Governance Group to act as an approver. This is optional and adds to the approval chain."
+                                            "helpKey": "Enter the exact names of Governance Groups to act as approvers. These are optional and add to the approval chain."
                                         },
                                         {
                                             "key": "roleAccessRequestCommentsRequired",
@@ -424,13 +430,13 @@
                                             "description": "Define the approval chain for revocation requests. For example, add 'owner' then 'manager' to require both approvals."
                                         },
                                         {
-                                            "key": "roleRevocationGovernanceGroupName",
-                                            "label": "Revocation Governance Group Name",
-                                            "type": "text",
+                                            "key": "roleRevocationGovernanceGroupNames",
+                                            "label": "Revocation Governance Group Approvers",
+                                            "type": "list",
                                             "required": false,
                                             "parentKey": "roleCreation",
                                             "parentValue": "true",
-                                            "helpKey": "Enter the exact name of a Governance Group to act as a revocation approver. This is optional and adds to the approval chain."
+                                            "helpKey": "Enter the exact names of Governance Groups to act as revocation approvers. These are optional and add to the approval chain."
                                         },
                                         {
                                             "key": "roleMembershipCriteria",
@@ -492,9 +498,18 @@
                                             "helpKey": "Name of the target source in ISC"
                                         },
                                         {
+                                            "key": "enableWorkflowLaunch",
+                                            "label": "Enable Workflow Launch?",
+                                            "type": "checkbox",
+                                            "required": false,
+                                            "helpKey": "If checked, workflows will be launched to create/sync entitlements in the target source. If unchecked, only role management in SailPoint will be performed; entitlements must already exist in the target source. Default is enabled."
+                                        },
+                                        {
                                             "key": "standard",
                                             "label": "Standard (Use Specific Workflow)?",
                                             "type": "checkbox",
+                                            "parentKey": "enableWorkflowLaunch",
+                                            "parentValue": "true",
                                             "helpKey": "If checked, use the workflow defined below. If unchecked, use Global Workflow."
                                         },
                                         {
@@ -561,5 +576,21 @@
                 }
             ]
         }
-    ]
+    ],
+    "accountCreateTemplate": {
+        "fields": [
+            {
+                "key": "id",
+                "label": "ID",
+                "type": "string",
+                "required": true,
+                "initialValue": {
+                    "type": "identityAttribute",
+                    "attributes": {
+                        "name": "uid"
+                    }
+                }
+            }
+        ]
+    }
 }

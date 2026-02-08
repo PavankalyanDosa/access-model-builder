@@ -15,6 +15,7 @@ export interface ConnectorConfig {
 export interface EntitlementSource {
     sourceName: string
     entitlementTypes: string[]
+    enableSync?: boolean
     // Role Configuration (Per Source)
     roleNameTemplate?: string
     roleNameCase?: 'original' | 'upper' | 'lower'
@@ -26,14 +27,14 @@ export interface EntitlementSource {
     roleOwnerName?: string
     roleCreationStyle?: 'all' | 'any'
     roleApprovers?: string[]
-    roleGovernanceGroupName?: string
+    roleGovernanceGroupNames?: string[]
     roleSegmentNames?: string[]
     roleMembershipCriteria?: string
     roleAccessRequestCommentsRequired?: boolean
     roleAccessRequestDenialCommentsRequired?: boolean
     roleRevocationApprovers?: string[]
-    roleRevocationGovernanceGroupName?: string
-    
+    roleRevocationGovernanceGroupNames?: string[]
+
     // Access Profile Configuration
     accessProfileCreation?: boolean
     accessProfileNameTemplate?: string
@@ -52,6 +53,7 @@ export interface EntitlementSource {
 export interface TargetSource {
     sourceName: string
     standard?: boolean
+    enableWorkflowLaunch?: boolean
     workflowName?: string
     workflowId?: string
     workflowClientId?: string

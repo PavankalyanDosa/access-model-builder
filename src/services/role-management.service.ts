@@ -8,12 +8,16 @@ import {
     OwnerReferenceV2025,
     RoleV2025,
     ApprovalSchemeForRoleV2025ApproverTypeV2025,
+    RoleMembershipSelectorV2025,
+    AttributeDTOV2025,
+    AttributeValueDTOV2025,
 } from 'sailpoint-api-client/dist/v2025'
 import { stringToMembership, Source } from '../utils/membership-parser'
 
 export class RoleManagementService {
     private client: SailPointApiService
     private metadataChecked = false
+    private cachePrewarmed = false
 
     // Caches
     private governanceGroupCache = new Map<string, string>() // Name -> ID
@@ -23,6 +27,73 @@ export class RoleManagementService {
 
     constructor(client: SailPointApiService) {
         this.client = client
+    }
+
+    /**
+     * Prewarm caches by batch fetching all governance groups and segments
+     * This eliminates N+1 query patterns
+     */
+    public async prewarmCaches(configs: EntitlementSource[]): Promise<void> {
+        if (this.cachePrewarmed) return
+        
+        logger.info('Prewarming caches for governance groups and segments...')
+        
+        // Collect all unique names
+        const govGroupNames = new Set<string>()
+        const segmentNames = new Set<string>()
+        
+        for (const config of configs) {
+            if (Array.isArray(config.roleGovernanceGroupNames)) {
+                config.roleGovernanceGroupNames.forEach(name => govGroupNames.add(name))
+            }
+            if (Array.isArray(config.roleRevocationGovernanceGroupNames)) {
+                config.roleRevocationGovernanceGroupNames.forEach(name => govGroupNames.add(name))
+            }
+            if (Array.isArray(config.roleSegmentNames)) {
+                config.roleSegmentNames.forEach(name => segmentNames.add(name))
+            }
+        }
+        
+        // Helper for chunked execution to avoid rate limits
+        const processInChunks = async (items: string[], processor: (item: string) => Promise<void>, chunkSize: number) => {
+            for (let i = 0; i < items.length; i += chunkSize) {
+                const chunk = items.slice(i, i + chunkSize)
+                await Promise.all(chunk.map(processor))
+            }
+        }
+
+        // Batch fetch governance groups (Chunk size 5)
+        if (govGroupNames.size > 0) {
+            logger.info(`Fetching ${govGroupNames.size} governance groups...`)
+            await processInChunks(Array.from(govGroupNames), async (name) => {
+                const id = await this.client.getGovernanceGroupId(name)
+                if (id) {
+                    this.governanceGroupCache.set(name, id)
+                } else {
+                    logger.warn(`Could not find Governance Group: ${name}`)
+                    this.governanceGroupCache.set(name, 'NOT_FOUND') // Negative caching
+                }
+            }, 5)
+        }
+        
+        // Batch fetch segments (Chunk size 5)
+        if (segmentNames.size > 0) {
+            logger.info(`Fetching ${segmentNames.size} segments...`)
+            await processInChunks(Array.from(segmentNames), async (name) => {
+                const id = await this.client.searchSegment(name)
+                if (id) {
+                    this.segmentCache.set(name, id)
+                } else {
+                    logger.warn(`Could not find Segment: ${name}`)
+                    this.segmentCache.set(name, 'NOT_FOUND') // Negative caching
+                }
+            }, 5)
+        }
+        
+        this.cachePrewarmed = true
+        const govGroupSuccess = Array.from(this.governanceGroupCache.values()).filter(v => v !== 'NOT_FOUND').length
+        const segmentSuccess = Array.from(this.segmentCache.values()).filter(v => v !== 'NOT_FOUND').length
+        logger.info(`Cache prewarming complete. Loaded ${govGroupSuccess}/${this.governanceGroupCache.size} governance groups and ${segmentSuccess}/${this.segmentCache.size} segments.`)
     }
 
     /**
@@ -228,7 +299,7 @@ export class RoleManagementService {
             const segmentIds = await this.resolveSegments(config)
 
             // Role Assignment Definition (Membership Criteria)
-            let membership: any = undefined
+            let membership: RoleMembershipSelectorV2025 | undefined = undefined
             if (config.roleMembershipCriteria) {
                 try {
                     // Render Velocity template for membership criteria
@@ -260,8 +331,8 @@ export class RoleManagementService {
                 // Check for manual override
                 // Use accessModelMetadata to check for roleManualOverride
                 const metadata = fullRole.accessModelMetadata?.attributes
-                const manualOverrideAttr = metadata?.find((attr: any) => attr.key === 'roleManualOverride')
-                const isManualOverride = manualOverrideAttr?.values?.some((val: any) => val.value === 'true')
+                const manualOverrideAttr = metadata?.find((attr: AttributeDTOV2025) => attr.key === 'roleManualOverride')
+                const isManualOverride = manualOverrideAttr?.values?.some((val: AttributeValueDTOV2025) => val.value === 'true')
 
                 if (isManualOverride) {
                     logger.info(`Role ${roleName} has 'roleManualOverride' set to true. Skipping updates.`)
@@ -558,25 +629,29 @@ export class RoleManagementService {
             }
         }
 
-        if (config.roleGovernanceGroupName) {
-            let govGroupId: string | undefined
-            if (this.governanceGroupCache.has(config.roleGovernanceGroupName)) {
-                govGroupId = this.governanceGroupCache.get(config.roleGovernanceGroupName)
-            } else {
-                const id = await this.client.getGovernanceGroupId(config.roleGovernanceGroupName)
-                if (id) {
-                    govGroupId = id
-                    this.governanceGroupCache.set(config.roleGovernanceGroupName, govGroupId)
+        if (config.roleGovernanceGroupNames) {
+            for (const govGroupName of config.roleGovernanceGroupNames) {
+                let govGroupId: string | undefined
+                if (this.governanceGroupCache.has(govGroupName)) {
+                    govGroupId = this.governanceGroupCache.get(govGroupName)
+                } else {
+                    const id = await this.client.getGovernanceGroupId(govGroupName)
+                    if (id) {
+                        govGroupId = id
+                        this.governanceGroupCache.set(govGroupName, govGroupId)
+                    }
                 }
-            }
 
-            if (govGroupId) {
-                accessRequestConfig.approvalSchemes?.push({
-                    approverType: ApprovalSchemeForRoleV2025ApproverTypeV2025.GovernanceGroup,
-                    approverId: govGroupId,
-                })
-            } else {
-                logger.warn(`Could not find Governance Group: ${config.roleGovernanceGroupName}`)
+                if (govGroupId && govGroupId !== 'NOT_FOUND') {
+                    accessRequestConfig.approvalSchemes?.push({
+                        approverType: ApprovalSchemeForRoleV2025ApproverTypeV2025.GovernanceGroup,
+                        approverId: govGroupId,
+                    })
+                } else if (govGroupId === 'NOT_FOUND') {
+                    // Skip - already logged during cache prewarming
+                } else {
+                    logger.warn(`Could not find Governance Group: ${govGroupName}`)
+                }
             }
         }
 
@@ -612,25 +687,29 @@ export class RoleManagementService {
             }
         }
 
-        if (config.roleRevocationGovernanceGroupName) {
-            let govGroupId: string | undefined
-            if (this.governanceGroupCache.has(config.roleRevocationGovernanceGroupName)) {
-                govGroupId = this.governanceGroupCache.get(config.roleRevocationGovernanceGroupName)
-            } else {
-                const id = await this.client.getGovernanceGroupId(config.roleRevocationGovernanceGroupName)
-                if (id) {
-                    govGroupId = id
-                    this.governanceGroupCache.set(config.roleRevocationGovernanceGroupName, govGroupId)
+        if (config.roleRevocationGovernanceGroupNames) {
+            for (const govGroupName of config.roleRevocationGovernanceGroupNames) {
+                let govGroupId: string | undefined
+                if (this.governanceGroupCache.has(govGroupName)) {
+                    govGroupId = this.governanceGroupCache.get(govGroupName)
+                } else {
+                    const id = await this.client.getGovernanceGroupId(govGroupName)
+                    if (id) {
+                        govGroupId = id
+                        this.governanceGroupCache.set(govGroupName, govGroupId)
+                    }
                 }
-            }
 
-            if (govGroupId) {
-                revocationRequestConfig.approvalSchemes?.push({
-                    approverType: ApprovalSchemeForRoleV2025ApproverTypeV2025.GovernanceGroup,
-                    approverId: govGroupId,
-                })
-            } else {
-                logger.warn(`Could not find Revocation Governance Group: ${config.roleRevocationGovernanceGroupName}`)
+                if (govGroupId && govGroupId !== 'NOT_FOUND') {
+                    revocationRequestConfig.approvalSchemes?.push({
+                        approverType: ApprovalSchemeForRoleV2025ApproverTypeV2025.GovernanceGroup,
+                        approverId: govGroupId,
+                    })
+                } else if (govGroupId === 'NOT_FOUND') {
+                    // Skip - already logged during cache prewarming
+                } else {
+                    logger.warn(`Could not find Revocation Governance Group: ${govGroupName}`)
+                }
             }
         }
 
@@ -655,10 +734,13 @@ export class RoleManagementService {
                     }
                 }
 
-                if (segId) {
+                if (segId && segId !== 'NOT_FOUND') {
                     segmentIds.push(segId)
+                } else if (segId === 'NOT_FOUND') {
+                    // Skip - already logged during cache prewarming
                 } else {
                     logger.warn(`Could not find Segment: ${segName}`)
+                    this.segmentCache.set(segName, 'NOT_FOUND') // Negative caching for runtime lookups
                 }
             }
         }
@@ -690,12 +772,20 @@ export class RoleManagementService {
             return s
         }
 
+        // Helper to sanitize input for Velocity
+        const sanitize = (str: string | undefined | null): string => {
+            if (!str) return ''
+            // Don't escape $ - Velocity handles it safely when used as data
+            // Escaping causes the output to contain \$ instead of $
+            return str
+        }
+
         const context = {
-            _source: sourceName,
-            _value: entitlement.value || entitlement.name,
-            _displayName: entitlement.displayName || entitlement.name,
-            _attribute: entitlement.attribute || 'group',
-            _type: entitlement.type || 'entitlement',
+            _source: sanitize(sourceName),
+            _value: sanitize(entitlement.value || entitlement.name),
+            _displayName: sanitize(entitlement.displayName || entitlement.name),
+            _attribute: sanitize(entitlement.attribute || 'group'),
+            _type: sanitize(entitlement.type || 'entitlement'),
             now: now,
             formatdate: formatdate,
         }
@@ -713,8 +803,8 @@ export class RoleManagementService {
      */
     private async getAllSources(): Promise<Source[]> {
         try {
-            const response = await this.client['sourcesApi'].listSources({ limit: 250 })
-            return response.data.map((s: any) => ({ id: s.id, name: s.name }))
+            const sources = await this.client.listAllSources()
+            return sources.map((s: any) => ({ id: s.id, name: s.name }))
         } catch (error: any) {
             logger.error(`Failed to fetch sources: ${error.message}`)
             return []

@@ -381,17 +381,34 @@ export class SailPointApiService {
     /**
      * Search for a Segment by name using SDK
      * Note: Segments are not searchable via Search API, so we list and filter client-side
+     * Limited to first 1000 segments to prevent memory exhaustion
      */
     async searchSegment(name: string): Promise<string | null> {
         try {
-            // List all segments using Paginator to ensure we find it if it exists
-            const response = await Paginator.paginate(this.segmentsApi, this.segmentsApi.listSegments, { limit: 250 })
-
-            if (response.data && response.data.length > 0) {
-                const segment = response.data.find((s: SegmentV2025) => s.name === name)
-                return segment?.id || null
+            const MAX_SEGMENTS = 1000
+            
+            // List segments with limit
+            let response = await this.segmentsApi.listSegments({ limit: 250 })
+            
+            let allSegments: SegmentV2025[] = response.data
+            let offset = 250
+            
+            // Fetch additional pages up to MAX_SEGMENTS
+            while (allSegments.length < MAX_SEGMENTS && response.data.length === 250) {
+                response = await this.segmentsApi.listSegments({ limit: 250, offset })
+                if (response.data.length === 0) break
+                
+                allSegments = allSegments.concat(response.data)
+                offset += 250
+                
+                if (allSegments.length >= MAX_SEGMENTS) {
+                    logger.warn(`Reached maximum segment limit of ${MAX_SEGMENTS}. Some segments may not be loaded.`)
+                    break
+                }
             }
-            return null
+            
+            const segment = allSegments.find((s: SegmentV2025) => s.name === name)
+            return segment?.id || null
         } catch (error: any) {
             logger.error(`Error searching for segment ${name}: ${error.message}`)
             return null
@@ -615,6 +632,18 @@ export class SailPointApiService {
         } catch (error: any) {
             logger.error(`Error updating Access Profile ${id}: ${error.message}`)
             throw error
+        }
+    }
+    /**
+     * List all sources (wrapper for sourcesApi)
+     */
+    async listAllSources(): Promise<any[]> {
+        try {
+            const response = await this.sourcesApi.listSources({ limit: 250 })
+            return response.data
+        } catch (error: any) {
+            logger.error(`Error listing sources: ${error.message}`)
+            return []
         }
     }
 }

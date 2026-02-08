@@ -201,6 +201,7 @@ Auth Sources are authoritative systems from which entitlements are read.
 |-----------|------|----------|-------------|
 | `sourceName` | string | Yes | Name of the source in ISC |
 | `entitlementTypes` | array | Yes | Types to sync (e.g., `["groups", "roles"]`) |
+| `enableSync` | boolean | No | Enable synchronization for this source (default: `true`) |
 | **Filtering** | | | |
 | `enableFiltering` | boolean | No | Enable pattern/native filtering |
 | `includePatterns` | array | No | Glob patterns to include (e.g., `["Admin-*"]`) |
@@ -220,13 +221,13 @@ Auth Sources are authoritative systems from which entitlements are read.
 | `roleOwnerName` | string | No | Owner name/alias (for individual type) |
 | `roleEnabled` | boolean | No | Enable role (default: `true`) |
 | `roleRequestable` | boolean | No | Allow role requests (default: `true`) |
-| `roleMembershipCriteria` | string | No | SCIM-like criteria for role assignment |
+| `roleMembershipCriteria` | string | No | Criteria for auto-assignment (e.g., `identity.dept eq 'IT'`) |
 | `roleCreationStyle` | string | No | `all` or `any` (default: `any`) |
 | `roleSegmentNames` | array | No | Segment names to assign |
 | `roleApprovers` | array | No | Approval types: `owner`, `manager`, `sourceOwner` |
-| `roleGovernanceGroupName` | string | No | Governance group for approvals |
-| `roleRevocationApprovers` | array | No | Revocation approval types |
-| `roleRevocationGovernanceGroupName` | string | No | Governance group for revocations |
+| `roleGovernanceGroupNames` | array | No | List of Governance Groups for access approval |
+| `roleRevocationApprovers` | array | No | List of revocation approvers (`owner`, `manager`) |
+| `roleRevocationGovernanceGroupNames` | array | No | List of Governance Groups for revocation approval |
 
 ### Target Sources
 

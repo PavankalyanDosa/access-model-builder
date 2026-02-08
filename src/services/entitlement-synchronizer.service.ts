@@ -35,6 +35,9 @@ export class EntitlementSyncService {
             logger.info(`Execution Limit: ${executionLimit} ${isParallel ? 'per source' : 'total'}`)
         }
 
+        // Prewarm caches to eliminate N+1 queries
+        await this.roleService.prewarmCaches(this.config.entitlementSources)
+
         // Pre-resolve target source IDs to avoid repeated API calls
         const targetSourceIds = await this.resolveTargetSourceIds()
 
@@ -44,6 +47,12 @@ export class EntitlementSyncService {
             const types = Array.isArray(sourceConfig.entitlementTypes) ? sourceConfig.entitlementTypes : []
 
             if (!sourceName) continue
+
+            // Check if sync is enabled for this source (default to true if undefined)
+            if (sourceConfig.enableSync === false) {
+                logger.info(`Source ${sourceName}: Synchronization disabled. Skipping.`)
+                continue
+            }
 
             const sourceId = await this.client.resolveSourceIdByName(sourceName)
             if (!sourceId) {
@@ -160,17 +169,18 @@ export class EntitlementSyncService {
     }
 
     /**
-     * Sync a single entitlement to all target sources
+     * Sync a single entitlement to all target sources (parallelized)
      */
     private async syncEntitlementToTargets(ent: EntitlementData, targetSourceIds: Map<string, string>): Promise<void> {
         if (!ent.value) return
 
-        for (const targetSource of this.config.targetSources) {
+        // Create tasks for all target sources
+        const tasks = this.config.targetSources.map(async (targetSource) => {
             const targetSourceName = targetSource.sourceName
-            if (!targetSourceName) continue
+            if (!targetSourceName) return
 
             const targetSourceId = targetSourceIds.get(targetSourceName)
-            if (!targetSourceId) continue
+            if (!targetSourceId) return
 
             // Add throttling delay to prevent rate limiting (100ms between requests)
             await new Promise((resolve) => setTimeout(resolve, 100))
@@ -189,19 +199,37 @@ export class EntitlementSyncService {
 
             if (exists === null) {
                 logger.error(`Failed to check entitlement ${ent.value} after retries, skipping`)
-                continue
+                return
             }
 
-            // If entitlement doesn't exist, launch workflow
+            // If entitlement doesn't exist, check if workflow launch is enabled
             if (!exists) {
-                logger.info(
-                    `Entitlement ${ent.value} missing in Target Source ${targetSourceName}. Launching Workflow...`
-                )
-                await this.launchWorkflow(ent, targetSource, targetSourceId)
+                if (targetSource.enableWorkflowLaunch !== false) {
+                    logger.info(
+                        `Entitlement ${ent.value} missing in Target Source ${targetSourceName}. Launching Workflow...`
+                    )
+                    await this.launchWorkflow(ent, targetSource, targetSourceId)
+                } else {
+                    logger.info(
+                        `Entitlement ${ent.value} not found in ${targetSourceName}, but workflow launch is disabled`
+                    )
+                }
             } else {
                 logger.info(`Entitlement ${ent.value} already exists in Target Source ${targetSourceName}`)
             }
-        }
+        })
+
+        // Execute all tasks in parallel and handle failures gracefully
+        const results = await Promise.allSettled(tasks)
+
+        // Log any failures
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                logger.error(
+                    `Failed to sync entitlement ${ent.value} to target source ${this.config.targetSources[index]?.sourceName}: ${result.reason}`
+                )
+            }
+        })
     }
 
     /**

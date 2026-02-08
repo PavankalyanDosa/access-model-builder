@@ -27,6 +27,7 @@ export class IscClient {
             // If dry run is false, force executionLimit to 0 (unlimited) and processingType to 'serial'
             executionLimit: config.dryRun ? config.executionLimit || 0 : 0,
             processingType: config.dryRun ? config.processingType || 'serial' : 'serial',
+
             workflowId: config.workflowId,
             workflowClientId: config.workflowClientId,
             workflowClientSecret: config.workflowClientSecret,
