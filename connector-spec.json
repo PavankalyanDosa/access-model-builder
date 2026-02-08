@@ -502,7 +502,7 @@
                                             "label": "Enable Workflow Launch?",
                                             "type": "checkbox",
                                             "required": false,
-                                            "helpKey": "If checked, workflows will be launched to create/sync entitlements in the target source. If unchecked, only role management in SailPoint will be performed; entitlements must already exist in the target source. Default is enabled."
+                                            "helpKey": "If checked, workflows will be launched to create/sync entitlements in the target source. If unchecked, skip workflow execution and only perform role management in SailPoint."
                                         },
                                         {
                                             "key": "standard",

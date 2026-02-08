@@ -35,27 +35,31 @@ export class RoleManagementService {
      */
     public async prewarmCaches(configs: EntitlementSource[]): Promise<void> {
         if (this.cachePrewarmed) return
-        
+
         logger.info('Prewarming caches for governance groups and segments...')
-        
+
         // Collect all unique names
         const govGroupNames = new Set<string>()
         const segmentNames = new Set<string>()
-        
+
         for (const config of configs) {
             if (Array.isArray(config.roleGovernanceGroupNames)) {
-                config.roleGovernanceGroupNames.forEach(name => govGroupNames.add(name))
+                config.roleGovernanceGroupNames.forEach((name) => govGroupNames.add(name))
             }
             if (Array.isArray(config.roleRevocationGovernanceGroupNames)) {
-                config.roleRevocationGovernanceGroupNames.forEach(name => govGroupNames.add(name))
+                config.roleRevocationGovernanceGroupNames.forEach((name) => govGroupNames.add(name))
             }
             if (Array.isArray(config.roleSegmentNames)) {
-                config.roleSegmentNames.forEach(name => segmentNames.add(name))
+                config.roleSegmentNames.forEach((name) => segmentNames.add(name))
             }
         }
-        
+
         // Helper for chunked execution to avoid rate limits
-        const processInChunks = async (items: string[], processor: (item: string) => Promise<void>, chunkSize: number) => {
+        const processInChunks = async (
+            items: string[],
+            processor: (item: string) => Promise<void>,
+            chunkSize: number
+        ) => {
             for (let i = 0; i < items.length; i += chunkSize) {
                 const chunk = items.slice(i, i + chunkSize)
                 await Promise.all(chunk.map(processor))
@@ -65,35 +69,45 @@ export class RoleManagementService {
         // Batch fetch governance groups (Chunk size 5)
         if (govGroupNames.size > 0) {
             logger.info(`Fetching ${govGroupNames.size} governance groups...`)
-            await processInChunks(Array.from(govGroupNames), async (name) => {
-                const id = await this.client.getGovernanceGroupId(name)
-                if (id) {
-                    this.governanceGroupCache.set(name, id)
-                } else {
-                    logger.warn(`Could not find Governance Group: ${name}`)
-                    this.governanceGroupCache.set(name, 'NOT_FOUND') // Negative caching
-                }
-            }, 5)
+            await processInChunks(
+                Array.from(govGroupNames),
+                async (name) => {
+                    const id = await this.client.getGovernanceGroupId(name)
+                    if (id) {
+                        this.governanceGroupCache.set(name, id)
+                    } else {
+                        logger.warn(`Could not find Governance Group: ${name}`)
+                        this.governanceGroupCache.set(name, 'NOT_FOUND') // Negative caching
+                    }
+                },
+                5
+            )
         }
-        
+
         // Batch fetch segments (Chunk size 5)
         if (segmentNames.size > 0) {
             logger.info(`Fetching ${segmentNames.size} segments...`)
-            await processInChunks(Array.from(segmentNames), async (name) => {
-                const id = await this.client.searchSegment(name)
-                if (id) {
-                    this.segmentCache.set(name, id)
-                } else {
-                    logger.warn(`Could not find Segment: ${name}`)
-                    this.segmentCache.set(name, 'NOT_FOUND') // Negative caching
-                }
-            }, 5)
+            await processInChunks(
+                Array.from(segmentNames),
+                async (name) => {
+                    const id = await this.client.searchSegment(name)
+                    if (id) {
+                        this.segmentCache.set(name, id)
+                    } else {
+                        logger.warn(`Could not find Segment: ${name}`)
+                        this.segmentCache.set(name, 'NOT_FOUND') // Negative caching
+                    }
+                },
+                5
+            )
         }
-        
+
         this.cachePrewarmed = true
-        const govGroupSuccess = Array.from(this.governanceGroupCache.values()).filter(v => v !== 'NOT_FOUND').length
-        const segmentSuccess = Array.from(this.segmentCache.values()).filter(v => v !== 'NOT_FOUND').length
-        logger.info(`Cache prewarming complete. Loaded ${govGroupSuccess}/${this.governanceGroupCache.size} governance groups and ${segmentSuccess}/${this.segmentCache.size} segments.`)
+        const govGroupSuccess = Array.from(this.governanceGroupCache.values()).filter((v) => v !== 'NOT_FOUND').length
+        const segmentSuccess = Array.from(this.segmentCache.values()).filter((v) => v !== 'NOT_FOUND').length
+        logger.info(
+            `Cache prewarming complete. Loaded ${govGroupSuccess}/${this.governanceGroupCache.size} governance groups and ${segmentSuccess}/${this.segmentCache.size} segments.`
+        )
     }
 
     /**
@@ -125,7 +139,9 @@ export class RoleManagementService {
                 return undefined
             }
 
-            logger.info(`Entitlement ${entitlement.name} confirmed in target source ${sourceName}. Proceeding with Access Profile.`)
+            logger.info(
+                `Entitlement ${entitlement.name} confirmed in target source ${sourceName}. Proceeding with Access Profile.`
+            )
 
             const apName = this.renderTemplate(config.accessProfileNameTemplate!, entitlement, sourceName)
             const apDescription = `Access Profile created for entitlement ${
@@ -135,12 +151,12 @@ export class RoleManagementService {
             logger.info(`Checking existence of Access Profile: ${apName}`)
 
             const existingAp = await this.client.searchAccessProfile(apName)
-            
+
             // Resolve Access Profile Owner (using AP-specific config or fallback to role config)
             const ownerType = config.accessProfileOwnerType || config.roleOwnerType
             const ownerName = config.accessProfileOwnerName || config.roleOwnerName
             const ownerId = (await this.resolveAccessProfileOwner(ownerType, ownerName, sourceName))?.id
-            
+
             // Resolve Source ID for the entitlement
             const sourceId = await this.client.resolveSourceIdByName(sourceName)
             if (!sourceId) {
@@ -161,7 +177,7 @@ export class RoleManagementService {
                 if (existingAp.description !== apDescription) {
                     operations.push({ op: 'replace', path: '/description', value: apDescription })
                 }
-                
+
                 if (ownerId && existingAp.owner?.id !== ownerId) {
                     operations.push({ op: 'replace', path: '/owner', value: { type: 'IDENTITY', id: ownerId } })
                 }
@@ -308,7 +324,7 @@ export class RoleManagementService {
 
                     // Get all sources for the parser
                     const sources = await this.getAllSources()
-                    
+
                     // Parse using proven reference implementation
                     membership = await stringToMembership(renderedCriteria, sources)
                 } catch (error: any) {
@@ -331,8 +347,12 @@ export class RoleManagementService {
                 // Check for manual override
                 // Use accessModelMetadata to check for roleManualOverride
                 const metadata = fullRole.accessModelMetadata?.attributes
-                const manualOverrideAttr = metadata?.find((attr: AttributeDTOV2025) => attr.key === 'roleManualOverride')
-                const isManualOverride = manualOverrideAttr?.values?.some((val: AttributeValueDTOV2025) => val.value === 'true')
+                const manualOverrideAttr = metadata?.find(
+                    (attr: AttributeDTOV2025) => attr.key === 'roleManualOverride'
+                )
+                const isManualOverride = manualOverrideAttr?.values?.some(
+                    (val: AttributeValueDTOV2025) => val.value === 'true'
+                )
 
                 if (isManualOverride) {
                     logger.info(`Role ${roleName} has 'roleManualOverride' set to true. Skipping updates.`)
@@ -414,7 +434,7 @@ export class RoleManagementService {
                     // If we have an Access Profile, ensure it's linked
                     const currentAPs = fullRole.accessProfiles || []
                     const apExists = currentAPs.some((ap: any) => ap.id === accessProfileId)
-                    
+
                     if (!apExists) {
                         const updatedAPs = [
                             ...currentAPs,
@@ -427,7 +447,7 @@ export class RoleManagementService {
                         operations.push({ op: 'replace', path: '/accessProfiles', value: updatedAPs })
                         logger.info(`Adding Access Profile ${accessProfileId} to role ${roleName}`)
                     }
-                    
+
                     // Should we remove direct entitlement assignment if we switch to AP?
                     // For safety, let's leave existing entitlements but prefer AP for new ones.
                     // Or, if we are strictly using APs now, maybe we should clean up?
@@ -478,7 +498,7 @@ export class RoleManagementService {
                 entitlementsList.push({
                     id: entitlement.id,
                     name: entitlement.name || entitlement.value,
-                    type: 'ENTITLEMENT'
+                    type: 'ENTITLEMENT',
                 })
             }
 
@@ -785,7 +805,7 @@ export class RoleManagementService {
             _value: sanitize(entitlement.value || entitlement.name),
             _displayName: sanitize(entitlement.displayName || entitlement.name),
             _attribute: sanitize(entitlement.attribute || 'group'),
-            _type: sanitize(entitlement.type || 'entitlement'),
+            _type: sanitize(entitlement.sourceSchemaObjectType || 'entitlement'),
             now: now,
             formatdate: formatdate,
         }

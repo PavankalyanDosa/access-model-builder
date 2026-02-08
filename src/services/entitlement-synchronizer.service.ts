@@ -211,7 +211,7 @@ export class EntitlementSyncService {
                     await this.launchWorkflow(ent, targetSource, targetSourceId)
                 } else {
                     logger.info(
-                        `Entitlement ${ent.value} not found in ${targetSourceName}, but workflow launch is disabled`
+                        `The Flag 'enableWorkflowLaunch' is false for ${targetSourceName}, checking only in sailpoint for entitlement ${ent.value}`
                     )
                 }
             } else {

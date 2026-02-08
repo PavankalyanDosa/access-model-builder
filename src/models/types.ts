@@ -67,6 +67,7 @@ export interface EntitlementData {
     value?: string
     attribute?: string
     type?: string
+    sourceSchemaObjectType?: string
     description?: string
     attributes?: any
     source?: {
