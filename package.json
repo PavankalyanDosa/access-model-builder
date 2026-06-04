@@ -1,6 +1,6 @@
 {
     "name": "access-model-builder",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "main": "dist/index.js",
     "scripts": {
         "clean": "shx rm -rf ./dist",
@@ -14,6 +14,7 @@
         "pack-zip": "spcx package"
     },
     "license": "MIT",
+    "author": "Pavankalyan Dosa",
     "private": true,
     "dependencies": {
         "@sailpoint/connector-sdk": "^1.0.0",

@@ -118,7 +118,7 @@ The **Access Model Builder** connector automates the synchronization of entitlem
 npm install
 npm run build
 npm run pack-zip
-sail conn upload -c access-model-builder -f ./dist/access-model-builder-0.1.0.zip
+sail conn upload -c access-model-builder -f ./dist/access-model-builder-1.0.0.zip
 ```
 
 ### 2. Create a Source
