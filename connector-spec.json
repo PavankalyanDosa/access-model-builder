@@ -114,7 +114,7 @@
                 {
                     "type": "section",
                     "sectionTitle": "Auth Sources Configuration",
-                    "sectionHelpMessage": "Auth Sources are the authoritative sources where entitlements originate. The connector reads entitlements from these sources and can optionally create/manage Roles based on them. For each Auth Source, you can specify which entitlement types to read (e.g., groups, permissions) and configure automatic Role creation with customizable naming, ownership, approval workflows, and assignment criteria. Entitlements from Auth Sources are then synchronized to Target Sources via workflows.",
+                    "sectionHelpMessage": "Auth Sources are the authoritative sources where entitlements originate. The connector reads entitlements from these sources and can optionally create/manage Roles based on them. For each Auth Source, you can specify which entitlement types to read (e.g., groups, permissions) and configure automatic Role creation with customizable naming, ownership, approval workflows, and assignment criteria. <Br><Br>Entitlements from Auth Sources are then synchronized to Target Sources via workflows.",
                     "docLinkLabel": "Role Membership Criteria Format Guide",
                     "docLink": "https://github.com/yannick-beot-sp/vscode-sailpoint-identitynow?tab=readme-ov-file#roles",
                     "items": [

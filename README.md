@@ -46,7 +46,7 @@ The **Access Model Builder** connector automates the synchronization of entitlem
   - **Glob exclude patterns** (e.g., `Test-*`, `*_OLD`)
   - **Native ISC API filters** (e.g., `name sw "Admin"`)
 - Launch workflows to create/update entitlements in Target Sources
-- Parallel or sequential processing modes
+- Parallel or serial processing modes
 - Configurable execution limits per source
 
 ### Access Profile Management
@@ -57,14 +57,16 @@ The **Access Model Builder** connector automates the synchronization of entitlem
 - Enabled/requestable flags
 - Can be used independently or alongside Roles
 - Automatic updates when entitlements change
+- Access Profile creation is driven by `accessProfileNameTemplate`
 
 ### Role Management
 
 - Automatic role creation from entitlements
 - Customizable role naming with Velocity templates
+- Optional role description templating and case transforms
 - Full governance configuration:
-  - Role owners (individual, source owner, or governance group)
-  - Approval workflows (owner, manager, governance group)
+  - Role owners (individual or source owner)
+  - Approval workflows (owner, manager, governance groups)
   - Segment assignment
   - Access request settings
   - Revocation policies
@@ -208,25 +210,28 @@ Auth Sources are authoritative systems from which entitlements are read.
 | `excludePatterns` | array | No | Glob patterns to exclude (e.g., `["Test-*"]`) |
 | `nativeFilter` | string | No | ISC API filter (e.g., `name sw "Admin"`) |
 | **Access Profile** | | | |
-| `accessProfileCreation` | boolean | No | Enable Access Profile creation |
-| `accessProfileNameTemplate` | string | No | Velocity template for AP names |
+| `accessProfileCreation` | boolean | No | UI/intention flag for Access Profile creation |
+| `accessProfileNameTemplate` | string | No | Velocity template for AP names. Required for AP creation in the current implementation |
 | `accessProfileOwnerType` | string | No | `sourceOwner` or `individual` |
 | `accessProfileOwnerName` | string | No | Owner name (if type is `individual`) |
 | `accessProfileEnabled` | boolean | No | Must be `true` to use in Roles (default: `true`) |
 | `accessProfileRequestable` | boolean | No | Allow direct AP requests (default: `false`) |
 | **Role** | | | |
-| `roleCreation` | boolean | No | Enable automatic role creation |
-| `roleNameTemplate` | string | No | Velocity template for role names |
-| `roleOwnerType` | string | No | `sourceOwner`, `individual`, or `governance` |
+| `roleCreation` | boolean | No | UI/intention flag for role creation |
+| `roleNameTemplate` | string | No | Velocity template for role names. Required for role creation in the current implementation |
+| `roleNameCase` | string | No | `original`, `upper`, or `lower` |
+| `roleDescriptionTemplate` | string | No | Velocity template for role descriptions |
+| `roleDescriptionCase` | string | No | `original`, `upper`, or `lower` |
+| `roleOwnerType` | string | No | `sourceOwner` or `individual` |
 | `roleOwnerName` | string | No | Owner name/alias (for individual type) |
 | `roleEnabled` | boolean | No | Enable role (default: `true`) |
 | `roleRequestable` | boolean | No | Allow role requests (default: `true`) |
 | `roleMembershipCriteria` | string | No | Criteria for auto-assignment (e.g., `identity.dept eq 'IT'`) |
 | `roleCreationStyle` | string | No | `all` or `any` (default: `any`) |
 | `roleSegmentNames` | array | No | Segment names to assign |
-| `roleApprovers` | array | No | Approval types: `owner`, `manager`, `sourceOwner` |
+| `roleApprovers` | array | No | Approval types: `owner`, `manager`, `sourceOwner` (`sourceOwner` is logged and skipped by the v2025 Role API integration) |
 | `roleGovernanceGroupNames` | array | No | List of Governance Groups for access approval |
-| `roleRevocationApprovers` | array | No | List of revocation approvers (`owner`, `manager`) |
+| `roleRevocationApprovers` | array | No | List of revocation approvers (`owner`, `manager`, `sourceOwner`; `sourceOwner` is skipped) |
 | `roleRevocationGovernanceGroupNames` | array | No | List of Governance Groups for revocation approval |
 
 ### Target Sources
@@ -258,6 +263,7 @@ Target Sources are destination systems where entitlements are created/updated.
 |-----------|------|----------|-------------|
 | `sourceName` | string | Yes | Name of the target source in ISC |
 | `standard` | boolean | No | Use source-specific workflow (`true`) or global (`false`) |
+| `enableWorkflowLaunch` | boolean | No | If `false`, skip workflow execution and only check entitlement existence in SailPoint |
 | `workflowName` | string | No | Descriptive name for logging |
 | `workflowId` | string | No | Source-specific workflow ID (if `standard=true`) |
 | `workflowClientId` | string | No | Client ID for this workflow |
@@ -273,8 +279,8 @@ Target Sources are destination systems where entitlements are created/updated.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `accessProfileCreation` | boolean | `false` | Enable Access Profile creation |
-| `accessProfileNameTemplate` | string | - | Velocity template for AP names (e.g., `AP - ${_value}`) |
+| `accessProfileCreation` | boolean | `false` | Optional flag used in connector configuration UI |
+| `accessProfileNameTemplate` | string | - | Velocity template for AP names (e.g., `AP - ${_value}`); required for AP creation |
 | `accessProfileOwnerType` | string | - | `sourceOwner` or `individual` |
 | `accessProfileOwnerName` | string | - | Owner name/alias (required if type is `individual`) |
 | `accessProfileEnabled` | boolean | `true` | Must be `true` to use in Roles |
@@ -291,7 +297,7 @@ The connector supports multiple configuration patterns based on your needs:
 | ❌ `false` | ✅ `true` | Creates **only** Role | Legacy: Direct entitlement-to-role assignment |
 | ❌ `false` | ❌ `false` | Creates **nothing** | Only sync entitlements to target sources |
 
-**Note:** When `accessProfileCreation=true` and `roleCreation=true`, entitlements are assigned to Roles via Access Profiles (not directly).
+**Note:** In the current code path, Access Profile creation occurs when `accessProfileNameTemplate` is present. `accessProfileCreation` and `roleCreation` are useful configuration flags, but the implementation keys off the templates.
 
 ### Access Profile Only
 
@@ -355,7 +361,7 @@ Use Velocity templates to generate dynamic role names:
 
 ### Role Ownership
 
-Three ownership models:
+Two ownership models are currently implemented:
 
 #### 1. Individual Owner
 ```json
@@ -372,14 +378,6 @@ Three ownership models:
 }
 ```
 Uses the owner of the Auth Source.
-
-#### 3. Governance Group
-```json
-{
-  "roleOwnerType": "governance",
-  "roleGovernanceGroupName": "Security Approvers"
-}
-```
 
 ### Role Membership Criteria Format
 
@@ -493,7 +491,7 @@ identity.department eq "$_value" and identity.location eq "Austin"
 {
   "roleRequestable": true,
   "roleApprovers": ["owner", "manager"],
-  "roleGovernanceGroupName": "Security Approvers",
+  "roleGovernanceGroupNames": ["Security Approvers"],
   "roleAccessRequestCommentsRequired": true,
   "roleAccessRequestDenialCommentsRequired": true
 }
@@ -503,9 +501,8 @@ identity.department eq "$_value" and identity.location eq "Austin"
 
 ```json
 {
-  "roleRequireApprovalForRemoval": true,
   "roleRevocationApprovers": ["owner"],
-  "roleRevocationGovernanceGroupName": "Security Approvers"
+  "roleRevocationGovernanceGroupNames": ["Security Approvers"]
 }
 ```
 
@@ -521,8 +518,8 @@ Control how entitlements are processed:
 }
 ```
 
-- **`parallel`**: Process all sources concurrently (faster)
-- **`serial`**: Process sources one at a time (safer for rate limits)
+- **`parallel`**: Apply the execution limit per source
+- **`serial`**: Apply the execution limit globally across the run
 
 ### Execution Limit
 
@@ -562,7 +559,7 @@ Control when roles are created based on target source availability:
 Prevent automatic updates to specific roles using metadata attribute:
 
 **How it works:**
-1. The connector creates a metadata attribute called `uam_manual_override` (if it doesn't exist)
+1. The connector creates a metadata attribute called `roleManualOverride` (if it doesn't exist)
 2. Add this attribute to any role you want to protect from automatic updates
 3. Set the value to `true`
 4. The connector will skip all updates for that role
@@ -574,7 +571,7 @@ Prevent automatic updates to specific roles using metadata attribute:
 
 **Steps:**
 1. In ISC, go to the Role
-2. Add metadata attribute: `uam_manual_override`
+2. Add metadata attribute: `roleManualOverride`
 3. Set value: `true`
 4. Save the role
 
@@ -676,8 +673,8 @@ Use Governance Groups for approval workflows:
 
 ```json
 {
-  "roleGovernanceGroupName": "Security Approvers",
-  "roleRevocationGovernanceGroupName": "Access Review Team"
+  "roleGovernanceGroupNames": ["Security Approvers"],
+  "roleRevocationGovernanceGroupNames": ["Access Review Team"]
 }
 ```
 
@@ -712,7 +709,8 @@ Use Governance Groups for approval workflows:
   "targetSources": [
     {
       "sourceName": "Okta",
-      "standard": false
+      "standard": false,
+      "enableWorkflowLaunch": true
     }
   ]
 }
@@ -732,9 +730,9 @@ Use Governance Groups for approval workflows:
       "nativeFilter": "name sw \"Corp\"",
       "roleCreation": true,
       "roleNameTemplate": "AD - ${_value}",
-      "roleOwnerType": "governance",
-      "roleGovernanceGroupName": "Security Team",
-      "roleRequireApprovalForAddition": true,
+      "roleOwnerType": "individual",
+      "roleOwnerName": "spadmin",
+      "roleGovernanceGroupNames": ["Security Team"],
       "roleApprovers": ["owner", "manager"],
       "roleAccessRequestCommentsRequired": true,
       "roleMembershipCriteria": "identity.department eq \"IT\" and identity.cloudLifecycleState eq \"active\""
@@ -762,7 +760,7 @@ Use Governance Groups for approval workflows:
       "entitlementTypes": ["group"],
       "roleCreation": true,
       "roleNameTemplate": "Access Model Builder - ${_value} - AD",
-      "roleOwnerType": "source",
+      "roleOwnerType": "sourceOwner",
       "roleMembershipCriteria": "'Active Directory'.attribute.employeeType eq \"FTE\" and identity.cloudLifecycleState eq \"active\""
     }
   ],
@@ -793,11 +791,11 @@ Use Governance Groups for approval workflows:
       "entitlementTypes": ["groups"],
       "roleCreation": true,
       "roleNameTemplate": "${_value} Access",
-      "roleOwnerType": "governance",
-      "roleGovernanceGroupName": "Department Managers",
+      "roleOwnerType": "individual",
+      "roleOwnerName": "spadmin",
+      "roleGovernanceGroupNames": ["Department Managers"],
       "roleMembershipCriteria": "(identity.department eq \"$_value\" or identity.department eq \"${_value}-Contractors\") and identity.cloudLifecycleState eq \"active\"",
-      "roleRequireApprovalForAddition": true,
-      "roleApprovers": ["manager", "governance"],
+      "roleApprovers": ["manager"],
       "roleSegmentNames": ["Employees"]
     }
   ]
@@ -814,14 +812,13 @@ Use Governance Groups for approval workflows:
       "entitlementTypes": ["groups"],
       "roleCreation": true,
       "roleNameTemplate": "Building - ${_value}",
-      "roleOwnerType": "governance",
-      "roleGovernanceGroupName": "Facilities Team",
+      "roleOwnerType": "individual",
+      "roleOwnerName": "spadmin",
+      "roleGovernanceGroupNames": ["Facilities Team"],
       "roleMembershipCriteria": "identity.location eq \"$_value\" and identity.cloudLifecycleState eq \"active\"",
-      "roleRequireApprovalForAddition": true,
-      "roleApprovers": ["owner", "manager", "governance"],
+      "roleApprovers": ["owner", "manager"],
       "roleAccessRequestCommentsRequired": true,
-      "roleRequireApprovalForRemoval": true,
-      "roleRevocationApprovers": ["governance"]
+      "roleRevocationGovernanceGroupNames": ["Facilities Team"]
     }
   ]
 }
@@ -862,14 +859,13 @@ Use Governance Groups for approval workflows:
       "roleOwnerName": "spadmin",
       "roleCreationStyle": "any",
       "roleApprovers": ["owner", "manager"],
-      "roleGovernanceGroupName": "Security Approvers",
+      "roleGovernanceGroupNames": ["Security Approvers"],
       "roleSegmentNames": ["Austin Employees"],
       "roleMembershipCriteria": "identity.department eq \"IT\" and identity.location eq \"Austin\"",
       "roleAccessRequestCommentsRequired": true,
       "roleAccessRequestDenialCommentsRequired": true,
-      "roleRequireApprovalForRemoval": true,
       "roleRevocationApprovers": ["owner"],
-      "roleRevocationGovernanceGroupName": "Security Approvers"
+      "roleRevocationGovernanceGroupNames": ["Security Approvers"]
     }
   ],
   "targetSources": [
@@ -927,7 +923,7 @@ Use Governance Groups for approval workflows:
 - No actual changes detected (delta detection)
 
 **Solution:**
-- Check if role has `uam_manual_override` metadata set to `true`
+- Check if role has `roleManualOverride` metadata set to `true`
 - Verify changes are meaningful (not just whitespace)
 
 #### 4. Membership Criteria Not Working
@@ -959,7 +955,7 @@ Use Governance Groups for approval workflows:
 
 **Solutions:**
 - Reduce `executionLimit`
-- Use `sequential` processing
+- Use `serial` processing
 - Add more specific filters
 - Enable filtering to reduce entitlements processed
 
@@ -1013,4 +1009,3 @@ Contributions are welcome! Please open an issue or pull request.
 ## Author
 
 Pavankalyan Dosa
-

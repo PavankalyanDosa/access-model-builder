@@ -196,6 +196,7 @@ export class RoleManagementService {
                 } else {
                     logger.info(`Access Profile ${apName} is up to date.`)
                 }
+                logger.info(`Returning existing Access Profile ID: ${existingAp.id}`)
                 return existingAp.id
             } else {
                 logger.info(`Access Profile ${apName} does not exist. Creating...`)
@@ -209,6 +210,7 @@ export class RoleManagementService {
                     requestable: config.accessProfileRequestable ?? false, // Default false when used in Roles
                 } as any)
                 logger.info(`Successfully created Access Profile: ${apName}`)
+                logger.info(`Created Access Profile ID: ${newAp?.id}`)
                 return newAp?.id
             }
         } catch (error: any) {
@@ -242,6 +244,7 @@ export class RoleManagementService {
         let accessProfileId: string | undefined
         if (config.accessProfileNameTemplate) {
             accessProfileId = await this.ensureAccessProfileExists(entitlement, sourceName, config)
+            logger.info(`Access Profile creation result for ${entitlement.name}: accessProfileId=${accessProfileId}`)
         }
 
         // 2. Ensure Role Exists (if configured)
@@ -489,18 +492,22 @@ export class RoleManagementService {
             let accessProfilesList: any[] = []
 
             if (accessProfileId) {
+                logger.info(`Using Access Profile (ID: ${accessProfileId}) for role ${roleName}`)
                 accessProfilesList.push({
                     id: accessProfileId,
                     type: 'ACCESS_PROFILE',
                     name: roleName, // Placeholder, ID is what matters
                 })
             } else {
+                logger.info(`No Access Profile ID found, using direct Entitlement for role ${roleName}`)
                 entitlementsList.push({
                     id: entitlement.id,
                     name: entitlement.name || entitlement.value,
                     type: 'ENTITLEMENT',
                 })
             }
+
+            logger.debug(`Creating role with accessProfiles: ${JSON.stringify(accessProfilesList)}, entitlements: ${JSON.stringify(entitlementsList)}`)
 
             // Create Role
             const newRole = await this.client.createRole({

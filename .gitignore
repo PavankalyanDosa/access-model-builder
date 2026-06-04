@@ -20,3 +20,5 @@ coverage/
 
 # Config files
 config.json
+
+.github/
